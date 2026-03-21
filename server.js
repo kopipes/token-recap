@@ -1,0 +1,132 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const https = require('https');
+const db = require('./database');
+const { syncGcpMetrics } = require('./gcpClient');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// Endpoint to fetch dynamic pricing
+app.get('/api/pricing', (req, res) => {
+    try {
+        const pricingData = fs.readFileSync(path.join(__dirname, 'pricing.json'), 'utf8');
+        res.json(JSON.parse(pricingData));
+    } catch (error) {
+        console.error('Error reading pricing.json:', error);
+        res.status(500).json({ error: 'Failed to read pricing configuration' });
+    }
+});
+
+// Endpoint to auto-sync dynamic pricing from internet
+app.post('/api/sync-pricing', (req, res) => {
+    https.get('https://openrouter.ai/api/v1/models', (resp) => {
+        let data = '';
+        resp.on('data', (chunk) => { data += chunk; });
+        resp.on('end', () => {
+            try {
+                const json = JSON.parse(data);
+                let newPricing = {};
+                
+                json.data.forEach(model => {
+                    if (model.id && model.id.startsWith('google/')) {
+                        const baseName = model.id.replace('google/', '');
+                        // OpenRouter gives price per 1 token, we need per 1M tokens
+                        const promptPrice = parseFloat(model.pricing.prompt) * 1000000;
+                        const completionPrice = parseFloat(model.pricing.completion) * 1000000;
+                        newPricing[baseName] = { 
+                            input: promptPrice || 0, 
+                            output: completionPrice || 0 
+                        };
+                    }
+                });
+
+                fs.writeFileSync(path.join(__dirname, 'pricing.json'), JSON.stringify(newPricing, null, 2), 'utf8');
+                res.json({ message: 'Pricing successfully synced with public registry', data: newPricing });
+            } catch (err) {
+                res.status(500).json({ error: 'Failed to parse JSON registry' });
+            }
+        });
+    }).on('error', (err) => {
+        res.status(500).json({ error: 'Failed to access internet registry' });
+    });
+});
+
+// Endpoint to trigger manual sync from GCP
+app.post('/api/sync-gcp', async (req, res) => {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const { startDate, endDate } = req.body;
+    
+    if (!projectId) {
+        return res.status(500).json({ error: 'GOOGLE_CLOUD_PROJECT_ID is not configured in .env' });
+    }
+
+    // Ensure dates are provided
+    if (!startDate || !endDate) {
+        return res.status(400).json({ error: 'startDate and endDate are required in the request body' });
+    }
+
+    try {
+        const result = await syncGcpMetrics(projectId, startDate, endDate);
+        res.json({ message: 'Sync successful', ...result });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to sync with GCP', details: error.message });
+    }
+});
+
+// Endpoint to fetch reports with daily, weekly, or monthly grouping
+app.get('/api/reports', (req, res) => {
+    const { period = 'daily', startDate, endDate } = req.query;
+
+    let dateFormat;
+    if (period === 'monthly') {
+        dateFormat = '%Y-%m'; // YYYY-MM
+    } else if (period === 'weekly') {
+        dateFormat = '%Y-%W'; // YYYY-WW (Week number)
+    } else {
+        dateFormat = '%Y-%m-%d'; // YYYY-MM-DD
+    }
+
+    let query = `
+        SELECT 
+            strftime(?, timestamp) as period_date,
+            model,
+            SUM(CASE WHEN token_type = 'input' THEN token_count ELSE 0 END) as input_tokens,
+            SUM(CASE WHEN token_type = 'output' THEN token_count ELSE 0 END) as output_tokens,
+            SUM(token_count) as total_tokens
+        FROM token_logs
+        WHERE 1=1
+    `;
+    
+    const queryParams = [dateFormat];
+
+    if (startDate) {
+        query += ` AND timestamp >= ?`;
+        queryParams.push(startDate);
+    }
+    
+    if (endDate) {
+        query += ` AND timestamp <= ?`;
+        queryParams.push(endDate);
+    }
+
+    query += ` GROUP BY period_date, model ORDER BY period_date DESC`;
+
+    db.all(query, queryParams, (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database query failed' });
+        }
+        res.json({ data: rows });
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
