@@ -2,5 +2,7 @@ node_modules/
 .env
 *.sqlite
 database.sqlite*
-western-plate*.json
+*.json
+scratch/
 *.log
+.DS_Store

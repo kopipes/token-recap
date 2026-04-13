@@ -19,7 +19,7 @@ async function fetchMetric(projectId, metricType, name, startTime, endTime) {
     try {
         const [timeSeries] = await client.listTimeSeries(request);
         
-        timeSeries.forEach(series => {
+        for (const series of timeSeries) {
             const metricLabels = series.metric.labels || {};
             const resourceLabels = series.resource.labels || {};
             
@@ -35,26 +35,28 @@ async function fetchMetric(projectId, metricType, name, startTime, endTime) {
 
             const projId = resourceLabels.project_id || projectId;
 
-            series.points.forEach(point => {
+            for (const point of series.points) {
                 const timestamp = new Date(point.interval.endTime.seconds * 1000).toISOString();
                 const tokenCount = point.value.int64Value || point.value.doubleValue || 0;
 
                 if (tokenCount > 0) {
-                    const stmt = db.prepare(`
-                        INSERT OR IGNORE INTO token_logs (timestamp, token_count, token_type, model, project_id)
-                        VALUES (?, ?, ?, ?, ?)
-                    `);
-                    stmt.run(timestamp, tokenCount, tokenType, model, projId, function(err) {
-                        if (err) {
-                            console.error('Error inserting log', err.message);
-                        } else if (this.changes > 0) {
-                            insertedCount++;
-                        }
+                    await new Promise((resolve, reject) => {
+                        db.run(`
+                            INSERT OR IGNORE INTO token_logs (timestamp, token_count, token_type, model, project_id)
+                            VALUES (?, ?, ?, ?, ?)
+                        `, [timestamp, tokenCount, tokenType, model, projId], function(err) {
+                            if (err) {
+                                console.error('Error inserting log', err.message);
+                                resolve(); // Continue anyway
+                            } else {
+                                if (this.changes > 0) insertedCount++;
+                                resolve();
+                            }
+                        });
                     });
-                    stmt.finalize();
                 }
-            });
-        });
+            }
+        }
         return insertedCount;
     } catch (error) {
         console.error(`Error fetching metric ${metricType}:`, error.message);
@@ -76,7 +78,7 @@ async function syncGcpMetrics(projectId, startTimeStr, endTimeStr) {
     const metricsToFetch = [
         'aiplatform.googleapis.com/publisher/online_serving/token_count',
         'generativelanguage.googleapis.com/quota/generate_content_paid_tier_input_token_count/usage',
-        'generativelanguage.googleapis.com/quota/generate_content_paid_tier_output_token_count/usage'
+        'generativelanguage.googleapis.com/generate_content_usage_output_token_count'
     ];
 
     let totalInserted = 0;
