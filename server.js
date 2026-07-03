@@ -104,6 +104,8 @@ app.get('/api/reports', (req, res) => {
         dateFormat = '%Y-%m'; // YYYY-MM
     } else if (period === 'weekly') {
         dateFormat = '%Y-%W'; // YYYY-WW (Week number)
+    } else if (period === 'hourly') {
+        dateFormat = '%Y-%m-%d %H:00'; // YYYY-MM-DD HH:00
     } else {
         dateFormat = '%Y-%m-%d'; // YYYY-MM-DD
     }
