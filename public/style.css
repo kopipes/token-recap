@@ -85,6 +85,13 @@ h1 {
     -webkit-text-fill-color: transparent;
 }
 
+[data-theme="light"] h1 {
+    background: none;
+    -webkit-text-fill-color: initial;
+    color: #000000;
+}
+
+
 .subtitle {
     color: var(--text-muted);
     font-size: 0.95rem;
