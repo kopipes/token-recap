@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthSelect = document.getElementById('month-select');
     const projectFilter = document.getElementById('project-filter');
     const btnThemeToggle = document.getElementById('btn-theme-toggle');
+    const timezoneFilter = document.getElementById('timezone-filter');
+
 
     // Theme Management
     const initTheme = () => {
@@ -217,7 +219,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 period: periodSelect.value,
                 startDate: startDateInput.value,
                 endDate: endDateInput.value,
-                projectId: projectFilter ? projectFilter.value : 'all'
+                projectId: projectFilter ? projectFilter.value : 'all',
+                timezone: timezoneFilter ? timezoneFilter.value : 'UTC'
             });
 
             const res = await fetch(`/api/reports?${params}`);
@@ -662,6 +665,9 @@ document.addEventListener('DOMContentLoaded', () => {
     endDateInput.addEventListener('change', fetchData);
     if (projectFilter) {
         projectFilter.addEventListener('change', fetchData);
+    }
+    if (timezoneFilter) {
+        timezoneFilter.addEventListener('change', fetchData);
     }
 
     // Sorting Logic
