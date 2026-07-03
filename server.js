@@ -97,7 +97,7 @@ app.post('/api/sync-gcp', async (req, res) => {
 
 // Endpoint to fetch reports with daily, weekly, or monthly grouping
 app.get('/api/reports', (req, res) => {
-    const { period = 'daily', startDate, endDate } = req.query;
+    const { period = 'daily', startDate, endDate, projectId } = req.query;
 
     let dateFormat;
     if (period === 'monthly') {
@@ -130,6 +130,11 @@ app.get('/api/reports', (req, res) => {
     if (endDate) {
         query += ` AND timestamp <= ?`;
         queryParams.push(endDate);
+    }
+
+    if (projectId && projectId !== 'all') {
+        query += ` AND project_id = ?`;
+        queryParams.push(projectId);
     }
 
     query += ` GROUP BY period_date, model, project_id ORDER BY period_date DESC`;

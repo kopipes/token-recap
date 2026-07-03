@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sortIcon = document.getElementById('sort-icon');
     const definitionsGrid = document.getElementById('definitions-grid');
     const monthSelect = document.getElementById('month-select');
+    const projectFilter = document.getElementById('project-filter');
 
     // Dinamis, diambil dari backend via pricing.json
     let exactPricing = {};
@@ -138,6 +139,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 const projects = await res.json();
                 projects.forEach(p => { projectLabels[p.id] = p.label; });
+
+                if (projectFilter) {
+                    projectFilter.innerHTML = '<option value="all">Semua Project</option>';
+                    projects.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = p.label || p.id;
+                        projectFilter.appendChild(opt);
+                    });
+                }
             }
         } catch (e) { console.error('Failed to load projects', e); }
     };
@@ -162,12 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fetch data from API
     const fetchData = async () => {
         try {
-            tableBody.innerHTML = '<tr><td colspan="3" class="text-center loading-text">Loading data...</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center loading-text">Loading data...</td></tr>';
             
             const params = new URLSearchParams({
                 period: periodSelect.value,
                 startDate: startDateInput.value,
-                endDate: endDateInput.value
+                endDate: endDateInput.value,
+                projectId: projectFilter ? projectFilter.value : 'all'
             });
 
             const res = await fetch(`/api/reports?${params}`);
@@ -187,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error(error);
-            tableBody.innerHTML = `<tr><td colspan="3" class="text-center loading-text" style="color: #f85149;">Error loading data: ${error.message}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="5" class="text-center loading-text" style="color: #f85149;">Error loading data: ${error.message}</td></tr>`;
         }
     };
 
@@ -565,6 +577,9 @@ document.addEventListener('DOMContentLoaded', () => {
     periodSelect.addEventListener('change', fetchData);
     startDateInput.addEventListener('change', fetchData);
     endDateInput.addEventListener('change', fetchData);
+    if (projectFilter) {
+        projectFilter.addEventListener('change', fetchData);
+    }
 
     // Sorting Logic
     sortTokensHeader.addEventListener('click', () => {
@@ -630,5 +645,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial fetch sequence
-    fetchPricing().then(() => fetchData());
+    fetchProjects().then(() => fetchPricing()).then(() => fetchData());
 });
