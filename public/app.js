@@ -12,19 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const definitionsGrid = document.getElementById('definitions-grid');
     const monthSelect = document.getElementById('month-select');
     const projectFilter = document.getElementById('project-filter');
-    const endDateGroup = document.getElementById('end-date-group');
-    const startDateLabel = document.getElementById('start-date-label');
-
-    // Toggle date fields based on period selection
-    const updatePeriodUI = () => {
-        const isHourly = periodSelect.value === 'hourly';
-        if (endDateGroup) {
-            endDateGroup.style.display = isHourly ? 'none' : '';
-        }
-        if (startDateLabel) {
-            startDateLabel.textContent = isHourly ? 'Pilih Tanggal' : 'Start Date';
-        }
-    };
 
     // Dinamis, diambil dari backend via pricing.json
     let exactPricing = {};
@@ -171,6 +158,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let sortDesc = null; // null = default order, true = DESC, false = ASC
     let usageChart = null; // Store chart instance
 
+    // Pagination state
+    const PAGE_SIZE = 50;
+    let currentPage = 1;
+    let totalPages = 1;
+    const paginationBar = document.getElementById('pagination-bar');
+    const btnPrevPage = document.getElementById('btn-prev-page');
+    const btnNextPage = document.getElementById('btn-next-page');
+    const pageInfo = document.getElementById('page-info');
+
     // Fetch dynamic pricing
     const fetchPricing = async () => {
         try {
@@ -191,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams({
                 period: periodSelect.value,
                 startDate: startDateInput.value,
-                endDate: periodSelect.value === 'hourly' ? startDateInput.value : endDateInput.value,
+                endDate: endDateInput.value,
                 projectId: projectFilter ? projectFilter.value : 'all'
             });
 
@@ -200,9 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (res.ok) {
                 currentData = json.data;
-                // Reset sorting when fetching fresh data
+                // Reset sorting and pagination when fetching fresh data
                 sortDesc = null;
                 sortIcon.textContent = '';
+                currentPage = 1;
                 renderTopCards(currentData);
                 renderTable(currentData);
                 renderDefinitions(currentData);
@@ -216,15 +213,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Render table rows
+    // Render table rows (paginated)
     const renderTable = (data) => {
         if (data.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="5" class="text-center loading-text">No usage data found for the selected period.</td></tr>';
+            updatePagination(0);
             return;
         }
 
+        // Calculate pagination
+        totalPages = Math.ceil(data.length / PAGE_SIZE);
+        if (currentPage > totalPages) currentPage = totalPages;
+        const startIdx = (currentPage - 1) * PAGE_SIZE;
+        const pageData = data.slice(startIdx, startIdx + PAGE_SIZE);
+
         tableBody.innerHTML = '';
-        data.forEach(item => {
+        pageData.forEach(item => {
             const tr = document.createElement('tr');
             const total = parseInt(item.total_tokens, 10);
             const inputT = parseInt(item.input_tokens || 0, 10);
@@ -245,7 +249,40 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             tableBody.appendChild(tr);
         });
+
+        updatePagination(data.length);
     };
+
+    // Update pagination bar UI
+    const updatePagination = (totalItems) => {
+        if (!paginationBar) return;
+        if (totalItems <= PAGE_SIZE) {
+            paginationBar.style.display = 'none';
+            return;
+        }
+        paginationBar.style.display = 'flex';
+        pageInfo.textContent = `Page ${currentPage} / ${totalPages}  (${totalItems} entries)`;
+        btnPrevPage.disabled = currentPage <= 1;
+        btnNextPage.disabled = currentPage >= totalPages;
+    };
+
+    // Pagination button listeners
+    if (btnPrevPage) {
+        btnPrevPage.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable(currentData);
+            }
+        });
+    }
+    if (btnNextPage) {
+        btnNextPage.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTable(currentData);
+            }
+        });
+    }
 
     // Refresh Pricing Configuration
     const btnRefreshPricing = document.getElementById('btn-refresh-pricing');
@@ -587,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // Event Listeners for filters
-    periodSelect.addEventListener('change', () => { updatePeriodUI(); fetchData(); });
+    periodSelect.addEventListener('change', fetchData);
     startDateInput.addEventListener('change', fetchData);
     endDateInput.addEventListener('change', fetchData);
     if (projectFilter) {
