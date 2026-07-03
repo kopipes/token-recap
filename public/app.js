@@ -12,6 +12,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const definitionsGrid = document.getElementById('definitions-grid');
     const monthSelect = document.getElementById('month-select');
     const projectFilter = document.getElementById('project-filter');
+    const btnThemeToggle = document.getElementById('btn-theme-toggle');
+
+    // Theme Management
+    const initTheme = () => {
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        updateThemeButtonLabel(savedTheme);
+    };
+
+    const updateThemeButtonLabel = (theme) => {
+        if (btnThemeToggle) {
+            btnThemeToggle.innerHTML = theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode';
+        }
+    };
+
+    if (btnThemeToggle) {
+        btnThemeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeButtonLabel(newTheme);
+            renderChart(currentData);
+        });
+    }
+
+    // Call theme init immediately
+    initTheme();
+
 
     // Dinamis, diambil dari backend via pricing.json
     let exactPricing = {};
@@ -558,69 +587,73 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
 
-        // 4. Update or Create Chart
+        // 4. Determine theme colors for chart axes & grids
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        const chartTextColor = isLight ? '#1f2328' : '#8b949e';
+        const chartGridColor = isLight ? 'rgba(31, 35, 40, 0.08)' : 'rgba(255,255,255,0.05)';
+
+        // 5. Update or Create Chart (always recreate to ensure theme colors apply clean)
         if (usageChart) {
-            usageChart.data.labels = periods;
-            usageChart.data.datasets = datasets;
-            usageChart.update();
-        } else {
-            usageChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: periods,
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            labels: {
-                                color: '#8b949e', // Mutated text color
-                                font: { family: 'Inter', size: 12 }
-                            }
-                        },
-                        tooltip: {
-                            mode: 'nearest',
-                            intersect: true,
-                            callbacks: {
-                                title: function(context) {
-                                    return 'Periode: ' + context[0].label;
-                                },
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ' ➔ ';
-                                    if (context.parsed.y !== null) {
-                                        const cost = context.dataset.costs[context.dataIndex];
-                                        label += context.parsed.y.toLocaleString() + ' tokens (≈ $' + cost.toFixed(4) + ')';
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: { color: '#8b949e' },
-                            grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            ticks: { 
-                                color: '#8b949e',
-                                callback: function(value) {
-                                    if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
-                                    if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
-                                    return value;
-                                }
-                            },
-                            grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false }
-                        }
-                    },
-                    interaction: { mode: 'nearest', intersect: true }
-                }
-            });
+            usageChart.destroy();
+            usageChart = null;
         }
+
+        usageChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: periods,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: chartTextColor, // Dynamic text color
+                            font: { family: 'Inter', size: 12 }
+                        }
+                    },
+                    tooltip: {
+                        mode: 'nearest',
+                        intersect: true,
+                        callbacks: {
+                            title: function(context) {
+                                return 'Periode: ' + context[0].label;
+                            },
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) label += ' ➔ ';
+                                if (context.parsed.y !== null) {
+                                    const cost = context.dataset.costs[context.dataIndex];
+                                    label += context.parsed.y.toLocaleString() + ' tokens (≈ $' + cost.toFixed(4) + ')';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: chartTextColor },
+                        grid: { color: chartGridColor, drawBorder: false }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { 
+                            color: chartTextColor,
+                            callback: function(value) {
+                                if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+                                if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
+                                return value;
+                            }
+                        },
+                        grid: { color: chartGridColor, drawBorder: false }
+                    }
+                },
+                interaction: { mode: 'nearest', intersect: true }
+            }
+        });
     };
 
     // Event Listeners for filters
