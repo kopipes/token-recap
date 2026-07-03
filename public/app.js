@@ -12,6 +12,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const definitionsGrid = document.getElementById('definitions-grid');
     const monthSelect = document.getElementById('month-select');
     const projectFilter = document.getElementById('project-filter');
+    const endDateGroup = document.getElementById('end-date-group');
+    const startDateLabel = document.getElementById('start-date-label');
+
+    // Toggle date fields based on period selection
+    const updatePeriodUI = () => {
+        const isHourly = periodSelect.value === 'hourly';
+        if (endDateGroup) {
+            endDateGroup.style.display = isHourly ? 'none' : '';
+        }
+        if (startDateLabel) {
+            startDateLabel.textContent = isHourly ? 'Pilih Tanggal' : 'Start Date';
+        }
+    };
 
     // Dinamis, diambil dari backend via pricing.json
     let exactPricing = {};
@@ -178,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams({
                 period: periodSelect.value,
                 startDate: startDateInput.value,
-                endDate: endDateInput.value,
+                endDate: periodSelect.value === 'hourly' ? startDateInput.value : endDateInput.value,
                 projectId: projectFilter ? projectFilter.value : 'all'
             });
 
@@ -574,7 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // Event Listeners for filters
-    periodSelect.addEventListener('change', fetchData);
+    periodSelect.addEventListener('change', () => { updatePeriodUI(); fetchData(); });
     startDateInput.addEventListener('change', fetchData);
     endDateInput.addEventListener('change', fetchData);
     if (projectFilter) {
