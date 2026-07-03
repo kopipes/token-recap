@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const db = require('./database');
-const { syncGcpMetrics } = require('./gcpClient');
+const { syncAllProjects } = require('./gcpClient');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +24,23 @@ app.get('/api/pricing', (req, res) => {
         res.status(500).json({ error: 'Failed to read pricing configuration' });
     }
 });
+
+// Endpoint to list configured projects (labels only, no credentials)
+app.get('/api/projects', (req, res) => {
+    try {
+        const projectsFile = path.join(__dirname, 'projects.json');
+        if (fs.existsSync(projectsFile)) {
+            const projects = JSON.parse(fs.readFileSync(projectsFile, 'utf8'));
+            res.json(projects.map(p => ({ id: p.id, label: p.label || p.id })));
+        } else {
+            const singleId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+            res.json([{ id: singleId, label: singleId }]);
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to read project configuration' });
+    }
+});
+
 
 // Endpoint to auto-sync dynamic pricing from internet
 app.post('/api/sync-pricing', (req, res) => {
@@ -59,23 +76,20 @@ app.post('/api/sync-pricing', (req, res) => {
     });
 });
 
-// Endpoint to trigger manual sync from GCP
+// Endpoint to trigger manual sync from GCP (supports multiple projects via projects.json)
 app.post('/api/sync-gcp', async (req, res) => {
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
     const { startDate, endDate } = req.body;
-    
-    if (!projectId) {
-        return res.status(500).json({ error: 'GOOGLE_CLOUD_PROJECT_ID is not configured in .env' });
-    }
 
-    // Ensure dates are provided
     if (!startDate || !endDate) {
         return res.status(400).json({ error: 'startDate and endDate are required in the request body' });
     }
 
     try {
-        const result = await syncGcpMetrics(projectId, startDate, endDate);
-        res.json({ message: 'Sync successful', ...result });
+        const result = await syncAllProjects(startDate, endDate);
+        const message = result.projects.length > 1
+            ? `Sync successful across ${result.projects.length} projects. Total: ${result.totalInserted} new records.`
+            : `Sync successful. Inserted ${result.totalInserted} new records.`;
+        res.json({ message, ...result });
     } catch (error) {
         res.status(500).json({ error: 'Failed to sync with GCP', details: error.message });
     }
@@ -98,6 +112,7 @@ app.get('/api/reports', (req, res) => {
         SELECT 
             strftime(?, timestamp) as period_date,
             model,
+            project_id,
             SUM(CASE WHEN token_type = 'input' THEN token_count ELSE 0 END) as input_tokens,
             SUM(CASE WHEN token_type = 'output' THEN token_count ELSE 0 END) as output_tokens,
             SUM(token_count) as total_tokens
@@ -117,7 +132,8 @@ app.get('/api/reports', (req, res) => {
         queryParams.push(endDate);
     }
 
-    query += ` GROUP BY period_date, model ORDER BY period_date DESC`;
+    query += ` GROUP BY period_date, model, project_id ORDER BY period_date DESC`;
+
 
     db.all(query, queryParams, (err, rows) => {
         if (err) {

@@ -94,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startDateInput.value = firstDayStr;
             endDateInput.value = lastDayStr;
             
+            fetchProjects();
             fetchData();
         });
     }
@@ -126,6 +127,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     startDateInput.value = firstDayStr;
     endDateInput.value = lastDayStr;
+
+    // Project label map: projectId -> label
+    let projectLabels = {};
+
+    // Fetch project labels from backend
+    const fetchProjects = async () => {
+        try {
+            const res = await fetch('/api/projects');
+            if (res.ok) {
+                const projects = await res.json();
+                projects.forEach(p => { projectLabels[p.id] = p.label; });
+            }
+        } catch (e) { console.error('Failed to load projects', e); }
+    };
 
     // Current report data and sort state
     let currentData = [];
@@ -179,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Render table rows
     const renderTable = (data) => {
         if (data.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="4" class="text-center loading-text">No usage data found for the selected period.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center loading-text">No usage data found for the selected period.</td></tr>';
             return;
         }
 
@@ -190,10 +205,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const inputT = parseInt(item.input_tokens || 0, 10);
             const outputT = parseInt(item.output_tokens || 0, 10);
             const cost = calculateCost(item.model, inputT, outputT);
-            
+
+            // Resolve project label
+            const projId = item.project_id || '';
+            const projLabel = projectLabels[projId] || projId || '—';
+            const projColor = projLabel === 'Dipo' ? '#f0883e' : projLabel === 'Datapedia' ? '#58a6ff' : '#8b949e';
+
             tr.innerHTML = `
                 <td>${item.period_date}</td>
                 <td><span style="background: rgba(88, 166, 255, 0.1); color: #58a6ff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.85rem;">${item.model}</span></td>
+                <td><span style="background: rgba(255,255,255,0.05); color: ${projColor}; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; border: 1px solid ${projColor}40;">${projLabel}</span></td>
                 <td class="text-right font-medium">${total.toLocaleString()}</td>
                 <td class="text-right" style="color: #3fb950; font-weight: 600;">$${cost.toFixed(4)}</td>
             `;
@@ -247,8 +268,23 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const json = await res.json();
             if (res.ok) {
-                showModal('Sinkronisasi Sukses', `Operasi sinkronisasi GCP selesai! Memasukkan <strong>${json.count}</strong> record baru ke database.`);
-                fetchData(); // Refresh UI
+                // Build per-project breakdown if available
+                let detail = '';
+                if (json.projects && json.projects.length > 1) {
+                    detail = '<br><br><table style="width:100%;margin-top:8px;border-collapse:collapse;">' +
+                        '<tr style="opacity:0.6;font-size:0.8rem;"><th style="text-align:left;padding:4px 8px;">Project</th><th style="text-align:right;padding:4px 8px;">Records</th></tr>' +
+                        json.projects.map(p => {
+                            const color = p.label === 'Dipo' ? '#f0883e' : '#58a6ff';
+                            return `<tr><td style="padding:4px 8px;"><span style="color:${color};font-weight:600;">${p.label}</span></td><td style="text-align:right;padding:4px 8px;">${p.count}</td></tr>`;
+                        }).join('') +
+                        `<tr style="border-top:1px solid rgba(255,255,255,0.1);"><td style="padding:6px 8px;font-weight:600;">Total</td><td style="text-align:right;padding:6px 8px;font-weight:600;">${json.totalInserted}</td></tr>` +
+                        '</table>';
+                } else {
+                    detail = ` Memasukkan <strong>${json.totalInserted ?? json.count}</strong> record baru.`;
+                }
+                showModal('Sinkronisasi Sukses', `Operasi sinkronisasi GCP selesai!${detail}`);
+                fetchData();
+                fetchProjects(); // Refresh labels in case projects changed
             } else {
                 showModal('Sinkronisasi Gagal', `Alasan: ${json.error}`, true);
             }

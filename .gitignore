@@ -3,6 +3,10 @@ node_modules/
 *.sqlite
 database.sqlite*
 *.json
+!package.json
+!package-lock.json
+!pricing.json
+!projects.example.json
 scratch/
 *.log
 .DS_Store

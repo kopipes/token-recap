@@ -1,0 +1,12 @@
+[
+  {
+    "id": "your-project-id-1",
+    "label": "Project 1 Label",
+    "credentials": "./your-service-account-1.json"
+  },
+  {
+    "id": "your-project-id-2",
+    "label": "Project 2 Label",
+    "credentials": "./your-service-account-2.json"
+  }
+]
