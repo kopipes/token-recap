@@ -6,6 +6,7 @@ const fs = require('fs');
 const https = require('https');
 const db = require('./database');
 const { syncAllProjects } = require('./gcpClient');
+const { syncBillingData } = require('./bigqueryClient');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -76,6 +77,25 @@ app.post('/api/sync-pricing', (req, res) => {
     });
 });
 
+// Endpoint to sync from GCP Billing Export in BigQuery (captures audio/image/etc modality)
+app.post('/api/sync-billing', async (req, res) => {
+    const { startDate, endDate } = req.body;
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ error: 'startDate and endDate are required in the request body' });
+    }
+
+    try {
+        const result = await syncBillingData(startDate, endDate);
+        res.json({
+            message: `Billing sync complete. Inserted ${result.insertedCount} new records (${result.skippedCount} unmapped SKUs skipped).`,
+            ...result
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to sync billing data from BigQuery', details: error.message });
+    }
+});
+
 // Endpoint to trigger manual sync from GCP (supports multiple projects via projects.json)
 app.post('/api/sync-gcp', async (req, res) => {
     const { startDate, endDate } = req.body;
@@ -97,7 +117,7 @@ app.post('/api/sync-gcp', async (req, res) => {
 
 // Endpoint to fetch reports with daily, weekly, or monthly grouping
 app.get('/api/reports', (req, res) => {
-    const { period = 'daily', startDate, endDate, projectId, timezone = 'UTC' } = req.query;
+    const { period = 'daily', startDate, endDate, projectId, modality, timezone = 'UTC' } = req.query;
 
     let timeExpression = 'timestamp';
     if (timezone === 'WIB') {
@@ -122,6 +142,7 @@ app.get('/api/reports', (req, res) => {
             strftime(?, ${timeExpression}) as period_date,
             model,
             project_id,
+            modality,
             SUM(CASE WHEN token_type = 'input' THEN token_count ELSE 0 END) as input_tokens,
             SUM(CASE WHEN token_type = 'output' THEN token_count ELSE 0 END) as output_tokens,
             SUM(token_count) as total_tokens
@@ -146,7 +167,16 @@ app.get('/api/reports', (req, res) => {
         queryParams.push(projectId);
     }
 
-    query += ` GROUP BY period_date, model, project_id ORDER BY period_date DESC`;
+    if (modality && modality !== 'all') {
+        if (modality === 'none') {
+            query += ` AND modality IS NULL`;
+        } else {
+            query += ` AND modality = ?`;
+            queryParams.push(modality);
+        }
+    }
+
+    query += ` GROUP BY period_date, model, project_id, modality ORDER BY period_date DESC`;
 
 
     db.all(query, queryParams, (err, rows) => {

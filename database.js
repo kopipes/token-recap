@@ -17,12 +17,32 @@ const db = new sqlite3.Database(dbPath, (err) => {
             token_type TEXT,
             model TEXT NOT NULL,
             project_id TEXT,
-            UNIQUE(timestamp, model, token_type, project_id)
+            modality TEXT,
+            UNIQUE(timestamp, model, token_type, project_id, modality)
         )`, (err) => {
             if (err) {
                 console.error('Error creating table', err.message);
             } else {
                 console.log('token_logs table is ready.');
+                // Migrate: add modality column if it doesn't exist yet (for existing DBs)
+                db.run(`ALTER TABLE token_logs ADD COLUMN modality TEXT`, (alterErr) => {
+                    // Ignore error if column already exists
+                    if (alterErr && !alterErr.message.includes('duplicate column')) {
+                        console.error('Migration error:', alterErr.message);
+                    }
+                    // Migrate: update UNIQUE constraint requires rebuilding the table.
+                    // We handle this by dropping and recreating only if the old unique index exists.
+                    db.run(`
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_token_logs_unique
+                        ON token_logs(timestamp, model, token_type, project_id, modality)
+                    `, (idxErr) => {
+                        if (idxErr && !idxErr.message.includes('already exists')) {
+                            console.error('Index migration error:', idxErr.message);
+                        } else {
+                            console.log('modality column and index ready.');
+                        }
+                    });
+                });
             }
         });
     }

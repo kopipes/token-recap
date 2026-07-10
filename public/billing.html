@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BigQuery Billing — Gemini Token Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .modality-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .mod-text        { background: rgba(88,166,255,0.12);  color: #58a6ff; }
+        .mod-text_long   { background: rgba(88,166,255,0.2);   color: #79b8ff; }
+        .mod-audio       { background: rgba(163,113,247,0.15); color: #a371f7; }
+        .mod-image       { background: rgba(240,136,62,0.15);  color: #f0883e; }
+        .mod-video       { background: rgba(245,108,108,0.15); color: #f56c6c; }
+        .mod-text_cached { background: rgba(63,185,80,0.12);   color: #3fb950; }
+        .mod-audio_cached{ background: rgba(163,113,247,0.08); color: #8957e5; }
+        .mod-output      { background: rgba(63,185,80,0.15);   color: #3fb950; }
+        .mod-unknown     { background: rgba(139,148,158,0.15); color: #8b949e; }
+
+        .type-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .type-input  { background: rgba(88,166,255,0.1);  color: #58a6ff; }
+        .type-output { background: rgba(63,185,80,0.1);   color: #3fb950; }
+
+        .breakdown-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: var(--item-border);
+            margin-top: 0.4rem;
+            overflow: hidden;
+        }
+        .breakdown-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: var(--primary);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .summary-tile {
+            background: var(--item-bg);
+            border: 1px solid var(--item-border);
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            transition: background 0.2s;
+        }
+        .summary-tile:hover { background: var(--item-hover-bg); }
+        .summary-tile .tile-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin-bottom: 0.4rem;
+        }
+        .summary-tile .tile-value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .summary-tile .tile-sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <main class="main-content">
+            <header class="header">
+                <div>
+                    <h1>BigQuery Billing</h1>
+                    <p class="subtitle">Detailed token breakdown by modality from GCP Billing Export
+                        <span style="opacity:0.65; font-size:0.8rem; margin-left:0.5rem; padding:0.15rem 0.4rem; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:4px; vertical-align:middle;">Source: BigQuery</span>
+                    </p>
+                </div>
+                <div class="actions" style="display:flex; gap:0.5rem; align-items:center;">
+                    <button id="btn-theme-toggle" class="btn btn-secondary" style="background:rgba(255,255,255,0.05); color:var(--text-main);">
+                        🌓 Tema
+                    </button>
+                    <a href="index.html" class="btn btn-secondary" style="background:rgba(88,166,255,0.1); color:#58a6ff; border:1px solid rgba(88,166,255,0.3); text-decoration:none;">
+                        ⚡ GCP Metrics
+                    </a>
+                    <button id="btn-sync-billing" class="btn btn-primary" style="background:#a371f7;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
+                        Sync Billing
+                    </button>
+                </div>
+            </header>
+
+            <!-- Filters -->
+            <section class="filters-card glass-panel">
+                <div class="filter-group">
+                    <label for="period">Grouping Period</label>
+                    <select id="period" class="styled-select">
+                        <option value="daily" selected>Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="month-select">Pilih Bulan</label>
+                    <select id="month-select" class="styled-select"></select>
+                </div>
+                <div class="filter-group">
+                    <label for="project-filter">Project</label>
+                    <select id="project-filter" class="styled-select">
+                        <option value="all">Semua Project</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="token-type-filter">Token Type</label>
+                    <select id="token-type-filter" class="styled-select">
+                        <option value="all">All Types</option>
+                        <option value="input">Input Only</option>
+                        <option value="output">Output Only</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="start-date">Start Date</label>
+                    <input type="date" id="start-date" class="styled-input">
+                </div>
+                <div class="filter-group">
+                    <label for="end-date">End Date</label>
+                    <input type="date" id="end-date" class="styled-input">
+                </div>
+                <div class="export-actions">
+                    <button id="btn-export-csv" class="btn btn-outline" title="Export to CSV">CSV</button>
+                    <button id="btn-export-xls" class="btn btn-outline" title="Export to Excel">Excel</button>
+                </div>
+            </section>
+
+            <!-- Summary tiles -->
+            <div id="summary-tiles" class="summary-grid" style="display:none;"></div>
+
+            <!-- Main table -->
+            <section class="table-card glass-panel">
+                <div class="table-responsive">
+                    <table id="billing-table">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th>Model</th>
+                                <th>Project</th>
+                                <th>Type</th>
+                                <th>Modality</th>
+                                <th class="text-right sortable" id="sort-tokens" title="Click to sort">Tokens <span id="sort-icon"></span></th>
+                                <th class="text-right">Est. Cost (USD)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <tr><td colspan="7" class="text-center loading-text">Loading data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="pagination-bar" class="pagination-bar" style="display:none;">
+                    <button id="btn-prev-page" class="btn btn-outline btn-sm">← Prev</button>
+                    <span id="page-info" style="color:#8b949e; font-size:0.85rem;"></span>
+                    <button id="btn-next-page" class="btn btn-outline btn-sm">Next →</button>
+                </div>
+            </section>
+
+            <!-- Chart -->
+            <section id="chart-section" class="chart-card glass-panel" style="padding:1.25rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--panel-border); margin-bottom:1.25rem; padding-bottom:0.5rem;">
+                    <h3 style="font-size:1.1rem; margin:0;">Grafik Tren per Modality</h3>
+                    <button id="btn-back-to-top" class="btn btn-secondary" style="padding:0.35rem 0.8rem; font-size:0.85rem; border-radius:6px;">↑ Top</button>
+                </div>
+                <div style="position:relative; height:350px; width:100%;">
+                    <canvas id="billing-chart"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal -->
+    <div id="custom-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Info</h3>
+                <button id="modal-close" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-ok" class="btn btn-primary" style="min-width:80px;">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="billing.js"></script>
+</body>
+</html>

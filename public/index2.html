@@ -3,27 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Token Usage Tracker</title>
+    <title>Gemini Token Usage Tracker — With Modality</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- SheetJS CDN for Excel Export -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-    <!-- Chart.js CDN for Line Graps -->
+    <!-- Chart.js CDN for Line Graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="dashboard-container">
-        <!-- Sidebar placeholder if needed, otherwise just main content -->
         <main class="main-content">
             <header class="header">
                 <div>
-                    <h1>Gemini Token Tracker</h1>
-                    <p class="subtitle">Monitor and analyze Google Cloud AI Platform usage <span style="opacity: 0.65; font-size: 0.8rem; margin-left: 0.5rem; padding: 0.15rem 0.4rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; vertical-align: middle;">Timezone: UTC (GMT+0)</span></p>
+                    <h1>Gemini Token Tracker <span style="font-size: 0.7em; background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); border-radius: 6px; padding: 0.2rem 0.6rem; vertical-align: middle;">+ Modality</span></h1>
+                    <p class="subtitle">Data lengkap dengan modality (text, audio, image, thinking) <span style="opacity: 0.65; font-size: 0.8rem; margin-left: 0.5rem; padding: 0.15rem 0.4rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; vertical-align: middle;">Timezone: UTC (GMT+0)</span></p>
                 </div>
                 <div class="actions" style="display: flex; gap: 0.5rem; align-items: center;">
+                    <a href="index.html" class="btn btn-secondary" style="background: rgba(255,255,255,0.05); color: var(--text-main); border: 1px solid rgba(255,255,255,0.1); text-decoration: none;">
+                        ← View Original
+                    </a>
                     <a href="billing.html" class="btn btn-secondary" style="background: rgba(163,113,247,0.12); color: #a371f7; border: 1px solid rgba(163,113,247,0.3); text-decoration: none;">
                         📊 BigQuery Billing
                     </a>
@@ -68,6 +70,18 @@
                     </select>
                 </div>
                 <div class="filter-group">
+                    <label for="modality-filter">Modality</label>
+                    <select id="modality-filter" class="styled-select">
+                        <option value="all">Semua Modality</option>
+                        <option value="text_thinking">Text + Thinking</option>
+                        <option value="text">Text</option>
+                        <option value="audio">Audio</option>
+                        <option value="image">Image</option>
+                        <option value="video">Video</option>
+                        <option value="none">Tidak Ada (null)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
                     <label for="timezone-filter">Timezone</label>
                     <select id="timezone-filter" class="styled-select">
                         <option value="UTC" selected>UTC (Waktu Data)</option>
@@ -81,6 +95,10 @@
                 <div class="filter-group" id="end-date-group">
                     <label for="end-date">End Date</label>
                     <input type="date" id="end-date" class="styled-input">
+                </div>
+                <div class="filter-group">
+                    <label for="idr-rate">Kurs IDR/USD</label>
+                    <input type="number" id="idr-rate" class="styled-input" value="26000" min="1" step="100" style="width: 110px;" title="Kurs rupiah per 1 USD. GCP biasanya menggunakan kurs ~Rp26.000-27.000/USD">
                 </div>
                 <div class="export-actions">
                     <button id="btn-export-csv" class="btn btn-outline" title="Export to CSV">CSV</button>
@@ -104,14 +122,17 @@
                                 <th>Period</th>
                                 <th>Model</th>
                                 <th>Project</th>
+                                <th>Modality</th>
                                 <th class="text-right sortable" id="sort-tokens" title="Click to sort by tokens">Total Tokens <span id="sort-icon"></span></th>
+                                <th class="text-right">Input Tokens</th>
+                                <th class="text-right">Output Tokens</th>
                                 <th class="text-right">Est. Cost (USD)</th>
+                                <th class="text-right">Est. Cost (IDR)</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
-                            <!-- Data will be populated here -->
                             <tr>
-                                <td colspan="5" class="text-center loading-text">Loading data...</td>
+                                <td colspan="8" class="text-center loading-text">Loading data...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -143,6 +164,7 @@
             </section>
         </main>
     </div>
+
     <!-- Custom Modal -->
     <div id="custom-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content">
@@ -161,6 +183,6 @@
 
     <!-- SheetJS for Excel export -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <script src="app.js"></script>
+    <script src="app2.js"></script>
 </body>
 </html>

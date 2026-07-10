@@ -6,17 +6,24 @@ const METRICS_TO_FETCH = [
     // Vertex AI token count (input + output combined, labeled by type)
     'aiplatform.googleapis.com/publisher/online_serving/token_count',
     // Generative Language API - input tokens (paid tier)
+    // Only PerModelPerMinute limit_name is used to avoid double-counting
+    // (GCP exposes both PerModelPerMinute and PerModelPerMinutePerUser with identical values)
     'generativelanguage.googleapis.com/quota/generate_content_paid_tier_input_token_count/usage',
-    // Generative Language API - output tokens (paid tier)
-    'generativelanguage.googleapis.com/quota/generate_content_paid_tier_output_token_count/usage',
-    // Generative Language API - output tokens (usage-based, newer metric name)
+    // Generative Language API - output tokens with modality label (text/audio/image)
     'generativelanguage.googleapis.com/generate_content_usage_output_token_count',
 ];
 
 async function fetchMetric(client, projectId, metricType, name, startTime, endTime) {
+    // For paid_tier_input metric, filter to only PerModelPerMinute to avoid double-counting.
+    // GCP exposes both PerModelPerMinute and PerModelPerMinutePerUser with identical values.
+    const isPaidTierInput = metricType.includes('generate_content_paid_tier_input_token_count');
+    const filter = isPaidTierInput
+        ? `metric.type="${metricType}" AND metric.labels.limit_name="GenerateContentPaidTierInputTokensPerModelPerMinute"`
+        : `metric.type="${metricType}"`;
+
     const request = {
         name: name,
-        filter: `metric.type="${metricType}"`,
+        filter,
         interval: {
             startTime: { seconds: Math.floor(startTime.getTime() / 1000) },
             endTime: { seconds: Math.floor(endTime.getTime() / 1000) },
@@ -42,6 +49,13 @@ async function fetchMetric(client, projectId, metricType, name, startTime, endTi
             else if (metricType.includes('input')) tokenType = 'input';
             else if (metricType.includes('output')) tokenType = 'output';
 
+            // Capture modality from output metric label (e.g. "text", "audio", "image")
+            // For thinking tokens, append "_thinking" to distinguish billing tier
+            let modality = metricLabels.output_modality || null;
+            if (modality && metricLabels.thinking_enabled === 'true') {
+                modality = modality + '_thinking';
+            }
+
             const projId = resourceLabels.project_id || projectId;
 
             for (const point of series.points) {
@@ -52,9 +66,9 @@ async function fetchMetric(client, projectId, metricType, name, startTime, endTi
                 if (tokenCount > 0) {
                     await new Promise((resolve) => {
                         db.run(`
-                            INSERT OR IGNORE INTO token_logs (timestamp, token_count, token_type, model, project_id)
-                            VALUES (?, ?, ?, ?, ?)
-                        `, [timestamp, tokenCount, tokenType, model, projId], function (err) {
+                            INSERT OR IGNORE INTO token_logs (timestamp, token_count, token_type, model, project_id, modality)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        `, [timestamp, tokenCount, tokenType, model, projId, modality], function (err) {
                             if (err) console.error('Error inserting log:', err.message);
                             else if (this.changes > 0) insertedCount++;
                             resolve();
@@ -68,6 +82,36 @@ async function fetchMetric(client, projectId, metricType, name, startTime, endTi
         console.error(`[${projectId}] Error fetching metric ${metricType}:`, error.message);
         return 0;
     }
+}
+
+/**
+ * After syncing, backfill modality on input records that have no modality
+ * by matching them to the nearest output record within the same minute,
+ * for the same model and project_id.
+ * GCP's input metric has no modality label, but the output metric does.
+ */
+async function backfillInputModality(projectId) {
+    return new Promise((resolve, reject) => {
+        db.run(`
+            UPDATE token_logs
+            SET modality = (
+                SELECT out.modality
+                FROM token_logs out
+                WHERE out.token_type = 'output'
+                  AND out.modality IS NOT NULL
+                  AND out.model = token_logs.model
+                  AND out.project_id = token_logs.project_id
+                  AND strftime('%Y-%m-%dT%H', out.timestamp) = strftime('%Y-%m-%dT%H', token_logs.timestamp)
+                LIMIT 1
+            )
+            WHERE token_type = 'input'
+              AND modality IS NULL
+              AND project_id = ?
+        `, [projectId], function(err) {
+            if (err) reject(err);
+            else resolve(this.changes);
+        });
+    });
 }
 
 /**
@@ -96,6 +140,12 @@ async function syncGcpMetrics(projectConfig, startTimeStr, endTimeStr) {
     for (const metric of METRICS_TO_FETCH) {
         const count = await fetchMetric(client, projectId, metric, name, startTime, endTime);
         totalInserted += count;
+    }
+
+    // Backfill modality on input records by matching output records at same timestamp/model/project
+    const backfilled = await backfillInputModality(projectId);
+    if (backfilled > 0) {
+        console.log(`[${displayName}] Backfilled modality on ${backfilled} input records.`);
     }
 
     console.log(`[${displayName}] Sync complete. Inserted ${totalInserted} new log points.`);
